@@ -29,7 +29,12 @@ public class Function
         if (string.IsNullOrEmpty(slackUrl))
         {
             context.Logger.LogInformation("SLACK_URL env variable is not set.");
-            return "SLACK_URL not set";
+            return JsonConvert.SerializeObject(new
+            {
+                statusCode = 500,
+                headers = new { "Content-Type" = "application/json" },
+                body = "SLACK_URL not set"
+            });
         }
         
         var client = new HttpClient();
@@ -39,8 +44,16 @@ public class Function
         };
         
         HttpResponseMessage response = await client.SendAsync(webRequest);
-        
         using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
-        return await reader.ReadToEndAsync();
+        string slackResponse = await reader.ReadToEndAsync();
+        
+        var proxyResponse = new
+        {
+            statusCode = 200,
+            headers = new { "Content-Type" = "application/json" },
+            body = slackResponse
+        };
+        
+        return JsonConvert.SerializeObject(proxyResponse);
     }
 }
