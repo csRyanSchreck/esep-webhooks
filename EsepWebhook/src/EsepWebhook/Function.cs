@@ -8,52 +8,51 @@ using Newtonsoft.Json;
 // for converting the incoming JSON payload into .NET objects
 [assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]
 
-namespace EsepWebhook;
-
-public class Function
+namespace EsepWebhook
 {
-    public async Task<string> FunctionHandler(object input, ILambdaContext context)
+    public class Function
     {
-        context.Logger.LogInformation($"FunctionHandler received: {input}");
-        
-        dynamic json = JsonConvert.DeserializeObject<dynamic>(input.ToString());
-        
-        if (json?.body != null)
+        public async Task<string> FunctionHandler(object input, ILambdaContext context)
         {
-            json = JsonConvert.DeserializeObject<dynamic>(json.body.ToString());
-        }
-        
-        string payload = $"{{'text':'Issue Created: {json.issue.html_url}'}}";
-        
-        string slackUrl = Environment.GetEnvironmentVariable("SLACK_URL");
-        if (string.IsNullOrEmpty(slackUrl))
-        {
-            context.Logger.LogInformation("SLACK_URL env variable is not set.");
-            return JsonConvert.SerializeObject(new
+            context.Logger.LogLine("Input: " + input?.ToString());
+
+            dynamic payload = JsonConvert.DeserializeObject<dynamic>(input.ToString());
+            
+            if (payload?.issue?.html_url == null)
             {
-                statusCode = 500,
-                headers = new { "Content-Type" = "application/json" },
-                body = "SLACK_URL not set"
-            });
+                context.Logger.LogLine("Payload missing 'issue.html_url'.");
+                return "Invalid payload";
+            }
+            
+            string issueUrl = payload.issue.html_url;
+            context.Logger.LogLine("Issue URL: " + issueUrl);
+
+            string slackUrl = Environment.GetEnvironmentVariable("SLACK_URL");
+            if (string.IsNullOrEmpty(slackUrl))
+            {
+                context.Logger.LogLine("SLACK_URL env variable is not set.");
+                return "SLACK_URL is not set";
+            }
+
+            var slackPayload = new { text = $"Issue Created: {issueUrl}" };
+            string jsonPayload = JsonConvert.SerializeObject(slackPayload);
+
+            using (var client = new HttpClient())
+            {
+                HttpResponseMessage response = await client.PostAsync(slackUrl,
+                    new StringContent(jsonPayload, Encoding.UTF8, "application/json"));
+
+                if (response.IsSuccessStatusCode)
+                {
+                    context.Logger.LogLine("Slack msg sent successfully.");
+                    return "Success";
+                }
+                else
+                {
+                    context.Logger.LogLine("Failed to send Slack msg with status: " + response.StatusCode);
+                    return $"Failed: {response.StatusCode}";
+                }
+            }
         }
-        
-        var client = new HttpClient();
-        var webRequest = new HttpRequestMessage(HttpMethod.Post, slackUrl)
-        {
-            Content = new StringContent(payload, Encoding.UTF8, "application/json")
-        };
-        
-        HttpResponseMessage response = await client.SendAsync(webRequest);
-        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
-        string slackResponse = await reader.ReadToEndAsync();
-        
-        var proxyResponse = new
-        {
-            statusCode = 200,
-            headers = new { "Content-Type" = "application/json" },
-            body = slackResponse
-        };
-        
-        return JsonConvert.SerializeObject(proxyResponse);
     }
 }
