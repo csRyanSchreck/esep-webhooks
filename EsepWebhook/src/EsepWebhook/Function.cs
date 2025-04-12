@@ -18,6 +18,11 @@ public class Function
         
         dynamic json = JsonConvert.DeserializeObject<dynamic>(input.ToString());
         
+        if (json?.body != null)
+        {
+            json = JsonConvert.DeserializeObject<dynamic>(json.body.ToString());
+        }
+        
         string payload = $"{{'text':'Issue Created: {json.issue.html_url}'}}";
         
         string slackUrl = Environment.GetEnvironmentVariable("SLACK_URL");
